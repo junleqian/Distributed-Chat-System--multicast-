@@ -42,9 +42,9 @@ extern pthread_mutex_t member_lock;
 #define GROUP_FILE  "GROUPLIST"
 
 /* Minimum and maximum delay values, in microseconds */
-#define MINDELAY    500000      /* 500ms */
-#define MAXDELAY    10000000    /* 10s */
+#define MINDELAY    100      /* 500ms */
+#define MAXDELAY    100    /* 10s */
 
-#define P_DROP      0.2         /* probability that a packet is dropped */
+#define P_DROP      0.0         /* probability that a packet is dropped */
 
 #endif
