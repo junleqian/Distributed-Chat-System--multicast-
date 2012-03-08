@@ -108,7 +108,7 @@ void multicast(const char *message) {
 /* Iterates over holdback queue finding messages ready to be delivered */
 void checkAllDeliverables() {
 
-	int size = g_slist_length(holdback_queue);
+/*	int size = g_slist_length(holdback_queue);
 	if ( size == 0) {
 		return;
 	}
@@ -137,7 +137,20 @@ void checkAllDeliverables() {
 	if (ctr) {
 		checkAllDeliverables();
 	}
+*/
 
+GSList* curr = holdback_queue;
+
+while (curr != NULL) {
+	if (curr->data != NULL && isDeliverable(curr->data)) {
+		gconstpointer g = curr->data;
+		deliver_wrapper(curr->data);
+		curr = g_slist_remove(curr,g);
+	}
+	else {
+	curr = curr->next;
+	}
+}
 
 	//FOREACH CHECK IF DELIVERABLE
 	//IF SO SET VECTOR FOR J ++ and REMOVE FROM HBACK AND DELIVER
