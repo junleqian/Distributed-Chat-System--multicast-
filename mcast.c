@@ -33,7 +33,7 @@ GArray *cached_messages;			// List of all cached messages for resending
 void multicast_init(void) {
 	unicast_init();
 	int i;
-	
+
 	// Initialize failure detection structure and spawn failure detector thread
 	process_health = malloc(sizeof(int)*mcast_num_members);
 	for (i = 0; i < mcast_num_members; i++) {
@@ -121,14 +121,12 @@ void updateTimestamps(timestamp x[]) {
 
 
 void receive(int source, const char *message, int len) {
-
+	// Extract the timestamp for updating the current process timestamp
 	timestamp temp[mcast_num_members];
 	char* t_ptr = message;
 	t_ptr += sizeof(int);
 	memcpy((void*)temp, (void*)t_ptr, sizeof(timestamp)*mcast_num_members);
 	t_ptr += sizeof(timestamp)*mcast_num_members;
-
-	updateTimestamps(temp);
 
 	gpointer data = message;
 	g_slist_append(holdback_queue,data);
@@ -136,6 +134,9 @@ void receive(int source, const char *message, int len) {
 	checkAllDeliverables();
 
 	const char *pfinal = message + sizeof(int) + (mcast_num_members*sizeof(timestamp));
+	for ( i = 0; i < mcast_num_members; i++) {
+		debugprintf(" - %d - ", vector_timestamp[i].ts);
+	}
 	deliver(source, pfinal);
 }
 

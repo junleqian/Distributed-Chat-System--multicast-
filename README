@@ -1,0 +1,1 @@
+This is an assignment in which we are to write a distributed chat client that uses a reliable multicast over unrealiable channels and random process failure, while maintaining causal ordering of messages.
