@@ -14,6 +14,7 @@ typedef struct timestamp {
 }timestamp;
 
 typedef struct mcast_message {
+	int size;
 	int pid;
 	timestamp* timestamp;
 	char* payload;
@@ -54,7 +55,7 @@ void multicast_init(void) {
 	sequence_number = 0;
 
 	// Create timestamp vector
-	vector_timestamp = malloc(1+sizeof(int)*mcast_num_members);
+	vector_timestamp = malloc(sizeof(timestamp)*mcast_num_members);
 
 	for(i = 0; i < mcast_num_members; i++) {
 		vector_timestamp[i].pid = mcast_members[i];
@@ -68,10 +69,12 @@ void multicast(const char *message) {
 	// Add this message to our cached list of messages
 	g_slist_append(cached_messages,message);
 
-	int size = sizeof(int) + (mcast_num_members*sizeof(timestamp)) + strlen(message)+1;
+	int size = 2*sizeof(int) + (mcast_num_members*sizeof(timestamp)) + strlen(message)+1;
 	mcast_message* m = malloc(size);
-	char* manipulate = m; // Used for moving around the datastructure to remove headers
+	m->size = mcast_num_members;
 	m->pid = my_id;
+	char* manipulate = m;  // Used for moving around the datastructure to remove headers
+	manipulate += 2*sizeof(int);
 	sequence_number++;
 
 	int i;
@@ -82,12 +85,12 @@ void multicast(const char *message) {
 		}
 	}
 
-	void* mptr = manipulate+sizeof(int);
+	void* mptr = manipulate;
 
 	// Copy over all timestamps
 	memcpy(mptr,(void*)vector_timestamp,sizeof(timestamp)*mcast_num_members);
 
-	mptr = manipulate+sizeof(int)+(mcast_num_members*sizeof(timestamp));
+	mptr = manipulate+(mcast_num_members*sizeof(timestamp));
 
 	// Copy over actual message
 	strncpy(mptr, (void*)(message), strlen(message));
@@ -105,42 +108,107 @@ void multicast(const char *message) {
 /* Iterates over holdback queue finding messages ready to be delivered */
 void checkAllDeliverables() {
 
+	int size = g_slist_length(holdback_queue);
+	if ( size == 0) {
+		return;
+	}
+
+	int ctr = 0;
+	int i;
+	GSList* curr = holdback_queue;
+	debugprintf("HQ SIZE IS %d", size);
+
+	for ( i = 0; i < size; i++) {
+
+		if(curr->data != NULL && isDeliverable(curr->data) ) {
+
+			debugprintf("isDeliverable %d : %d", i, isDeliverable(curr->data));
+			//Remove from queue
+			gconstpointer g = curr->data;
+
+			deliver_wrapper(curr->data);
+			g_slist_remove(curr,g);
+
+			ctr++;
+		}
+		curr = curr->next;
+	}
+
+	if (ctr) {
+		checkAllDeliverables();
+	}
+
+
 	//FOREACH CHECK IF DELIVERABLE
 	//IF SO SET VECTOR FOR J ++ and REMOVE FROM HBACK AND DELIVER
 	// deliver source pfinal
 }
 
+void deliver_wrapper(char* message) {
+	mcast_message* m = message;
+	int size = m->size;
+	int pid = m->pid;
+	char* delivery = m;
+	delivery+=2*sizeof(int) + sizeof(timestamp)*size;
+	deliver(pid, delivery);
+}
+
 /* Returns a non-zero value if a given message is ready to be delivered */
 int isDeliverable(void* message) {
-	char* tmp = message;
+	mcast_message* m = message;
+	int size = m->size;
+	int pid = m->pid;
+	char* ts = m;
+	ts+=2*sizeof(int);
+	timestamp* v = ts;
+	char* pload = ts + sizeof(timestamp)*size;
+	int i,j;
+	int expected_ts = 0;
+	for(i = 0; i < size; i++) {
+		if (v[i].pid == pid) 
+			expected_ts = v[i].ts;
+			break;
+	}
+
+	for( i = 0; i < mcast_num_members; i++) {
+		if ( vector_timestamp[i].pid == pid ) {
+			if (expected_ts-1 != vector_timestamp[i].ts) {
+			return 0;
+			}
+		}
+	}
+
+	for( i = 0; i < mcast_num_members; i++) {
+		for( j = 0; j < size; j++) {
+			if( v[j].pid == pid) {
+				continue;
+			}
+			if( vector_timestamp[i].pid == v[j].pid && v[j].ts > vector_timestamp[i].ts ) {
+				return 0;
+			}
+		}
+	}
+	return 1;
 }
-
-
-void updateTimestamps(timestamp x[]) {
-}
-
 
 void receive(int source, const char *message, int len) {
-	// Extract the timestamp for updating the current process timestamp
-	timestamp temp[mcast_num_members];
-	char* t_ptr = message;
-	t_ptr += sizeof(int);
-	memcpy((void*)temp, (void*)t_ptr, sizeof(timestamp)*mcast_num_members);
-	t_ptr += sizeof(timestamp)*mcast_num_members;
+	if( source == my_id) {
+	const char *pfinal = message + 2*sizeof(int) + (mcast_num_members*sizeof(timestamp));
+	deliver(source,pfinal);
+	return;
+	}
 
 	gpointer data = message;
 	g_slist_append(holdback_queue,data);
 
-	checkAllDeliverables();
+	checkAllDeliverables(message);
 
-	const char *pfinal = message + sizeof(int) + (mcast_num_members*sizeof(timestamp));
-	for ( i = 0; i < mcast_num_members; i++) {
-		debugprintf(" - %d - ", vector_timestamp[i].ts);
-	}
-	deliver(source, pfinal);
+	//const char *pfinal = message + 2*sizeof(int) + (mcast_num_members*sizeof(timestamp));
+	//deliver(source, pfinal);
 }
 
 void mcast_join(int member) {
+	debugprintf("MCASTNUM = %d\n",mcast_num_members);
 	timestamp* new_ts = malloc(sizeof(timestamp)*mcast_num_members);
 	int* new_fd = malloc(sizeof(int)*mcast_num_members);
 	int i;
